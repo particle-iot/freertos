@@ -271,7 +271,7 @@ typedef struct tskTaskControlBlock 			/* The old naming convention is used to pr
 		UBaseType_t		uxCriticalNesting;	/*< Holds the critical section nesting depth for ports that do not maintain their own count in the port layer. */
 	#endif
 
-	#if ( configUSE_TRACE_FACILITY == 1 )
+	#if( configUSE_TRACE_FACILITY == 1 ) || ( INCLUDE_vTaskGetInfo == 1 )
 		UBaseType_t		uxTCBNumber;		/*< Stores a number that increments each time a TCB is created.  It allows debuggers to determine when a task has been deleted and then recreated. */
 		UBaseType_t		uxTaskNumber;		/*< Stores a number specifically for use by third party trace code. */
 	#endif
@@ -1118,7 +1118,7 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB )
 
 		uxTaskNumber++;
 
-		#if ( configUSE_TRACE_FACILITY == 1 )
+		#if( configUSE_TRACE_FACILITY == 1 ) || ( INCLUDE_vTaskGetInfo == 1 )
 		{
 			/* Add a counter into the TCB for tracing only. */
 			pxNewTCB->uxTCBNumber = uxTaskNumber;
@@ -2552,7 +2552,137 @@ TCB_t *pxTCB;
 	}
 
 #endif /* configUSE_TRACE_FACILITY */
+/*-----------------------------------------------------------*/
+
+static UBaseType_t prvListTasksWithinSingleListParticle( TaskStatus_t *pxTaskStatusArray, List_t *pxList, eTaskState eState, TaskGetSystemStateParticleCallback_t particleCallback, void* particleCallbackOpaque )
+{
+    configLIST_VOLATILE TCB_t *pxNextTCB, *pxFirstTCB;
+    UBaseType_t uxTask = 0;
+
+    if( listCURRENT_LIST_LENGTH( pxList ) > ( UBaseType_t ) 0 )
+    {
+        listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxList ); /*lint !e9079 void * is used as this macro is used with timers and co-routines too.  Alignment is known to be fine as the type of the pointer stored and retrieved is the same. */
+
+        /* Populate an TaskStatus_t structure within the
+        pxTaskStatusArray array for each task that is referenced from
+        pxList.  See the definition of TaskStatus_t in task.h for the
+        meaning of each TaskStatus_t structure member. */
+        do
+        {
+            listGET_OWNER_OF_NEXT_ENTRY( pxNextTCB, pxList ); /*lint !e9079 void * is used as this macro is used with timers and co-routines too.  Alignment is known to be fine as the type of the pointer stored and retrieved is the same. */
+            vTaskGetInfo( ( TaskHandle_t ) pxNextTCB, &( pxTaskStatusArray[ uxTask ] ), pdTRUE, eState );
+            if (particleCallback == NULL)
+            {
+                uxTask++;
+            }
+            else
+            {
+                if (particleCallback(pxTaskStatusArray, particleCallbackOpaque) != 0)
+                {
+                    break;
+                }
+            }
+        } while( pxNextTCB != pxFirstTCB );
+    }
+    else
+    {
+        mtCOVERAGE_TEST_MARKER();
+    }
+
+    return uxTask;
+}
+
+UBaseType_t uxTaskGetSystemStateParticle( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime, TaskGetSystemStateParticleCallback_t particleCallback, void* particleCallbackOpaque )
+{
+    UBaseType_t uxTask = 0, uxQueue = configMAX_PRIORITIES;
+
+    vTaskSuspendAll();
+    {
+        /* Is there a space in the array for each task in the system? */
+        if( uxArraySize >= uxCurrentNumberOfTasks || (particleCallback != NULL) )
+        {
+            /* Fill in an TaskStatus_t structure with information on each
+            task in the Ready state. */
+            do
+            {
+                uxQueue--;
+                uxTask += prvListTasksWithinSingleListParticle( &( pxTaskStatusArray[ uxTask ] ), &( pxReadyTasksLists[ uxQueue ] ), eReady, particleCallback, particleCallbackOpaque );
+
+            } while( uxQueue > ( UBaseType_t ) tskIDLE_PRIORITY ); /*lint !e961 MISRA exception as the casts are only redundant for some ports. */
+
+            /* Fill in an TaskStatus_t structure with information on each
+            task in the Blocked state. */
+            uxTask += prvListTasksWithinSingleListParticle( &( pxTaskStatusArray[ uxTask ] ), ( List_t * ) pxDelayedTaskList, eBlocked, particleCallback, particleCallbackOpaque );
+            uxTask += prvListTasksWithinSingleListParticle( &( pxTaskStatusArray[ uxTask ] ), ( List_t * ) pxOverflowDelayedTaskList, eBlocked, particleCallback, particleCallbackOpaque );
+
+            #if( INCLUDE_vTaskDelete == 1 )
+            {
+                /* Fill in an TaskStatus_t structure with information on
+                each task that has been deleted but not yet cleaned up. */
+                uxTask += prvListTasksWithinSingleListParticle( &( pxTaskStatusArray[ uxTask ] ), &xTasksWaitingTermination, eDeleted, particleCallback, particleCallbackOpaque );
+            }
+            #endif
+
+            #if ( INCLUDE_vTaskSuspend == 1 )
+            {
+                /* Fill in an TaskStatus_t structure with information on
+                each task in the Suspended state. */
+                uxTask += prvListTasksWithinSingleListParticle( &( pxTaskStatusArray[ uxTask ] ), &xSuspendedTaskList, eSuspended, particleCallback, particleCallbackOpaque );
+            }
+            #endif
+
+            #if ( configGENERATE_RUN_TIME_STATS == 1)
+            {
+                if( pulTotalRunTime != NULL )
+                {
+                    #ifdef portALT_GET_RUN_TIME_COUNTER_VALUE
+                        portALT_GET_RUN_TIME_COUNTER_VALUE( ( *pulTotalRunTime ) );
+                    #else
+                        *pulTotalRunTime = portGET_RUN_TIME_COUNTER_VALUE();
+                    #endif
+                }
+            }
+            #else
+            {
+                if( pulTotalRunTime != NULL )
+                {
+                    *pulTotalRunTime = 0;
+                }
+            }
+            #endif
+        }
+        else
+        {
+            mtCOVERAGE_TEST_MARKER();
+        }
+    }
+    ( void ) xTaskResumeAll();
+
+    return uxTask;
+}
+
+void vTaskGetStackInfoParticle( TaskHandle_t pxTask, void** stack_ptr, void** start_stack_ptr, void** end_stack_ptr )
+{
+    tskTCB* pxTCB = NULL;
+    taskENTER_CRITICAL();
+
+    pxTCB = ( tskTCB * ) pxTask;
+    *( (portSTACK_TYPE**) stack_ptr) = pxTCB->pxStack;
+
+    #if ( portSTACK_GROWTH > 0 || configUSE_TRACE_FACILITY == 1 || configRECORD_STACK_HIGH_ADDRESS == 1)
+        *( (portSTACK_TYPE**) end_stack_ptr) = pxTCB->pxEndOfStack;
+    #else /* #if ( portSTACK_GROWTH > 0 ) */
+        *( (portSTACK_TYPE**) end_stack_ptr) = NULL;
+    #endif /* #if ( portSTACK_GROWTH > 0 ) */
+
+    *( (volatile portSTACK_TYPE**) start_stack_ptr) = pxTCB->pxTopOfStack;
+
+    taskEXIT_CRITICAL();
+    return;
+}
+
 /*----------------------------------------------------------*/
+
 
 #if ( INCLUDE_xTaskGetIdleTaskHandle == 1 )
 
@@ -3604,7 +3734,7 @@ static void prvCheckTasksWaitingTermination( void )
 }
 /*-----------------------------------------------------------*/
 
-#if( configUSE_TRACE_FACILITY == 1 )
+#if( configUSE_TRACE_FACILITY == 1 ) || ( INCLUDE_vTaskGetInfo == 1 )
 
 	void vTaskGetInfo( TaskHandle_t xTask, TaskStatus_t *pxTaskStatus, BaseType_t xGetFreeStackSpace, eTaskState eState )
 	{
