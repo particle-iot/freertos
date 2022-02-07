@@ -1635,6 +1635,12 @@ TaskHandle_t xTaskGetIdleTaskHandle( void ) PRIVILEGED_FUNCTION;
  */
 UBaseType_t uxTaskGetSystemState( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime ) PRIVILEGED_FUNCTION;
 
+typedef BaseType_t ( *TaskGetSystemStateParticleCallback_t)( TaskStatus_t * const status, void* opaque );
+
+UBaseType_t uxTaskGetSystemStateParticle( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime, TaskGetSystemStateParticleCallback_t particleCallback, void* ptr );
+
+void vTaskGetStackInfoParticle( TaskHandle_t pxTask, void** stack_ptr, void** start_stack_ptr, void** end_stack_ptr );
+
 /**
  * task. h
  * <PRE>void vTaskList( char *pcWriteBuffer );</PRE>

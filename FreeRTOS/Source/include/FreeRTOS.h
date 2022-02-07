@@ -1108,7 +1108,7 @@ typedef struct xSTATIC_TCB
 	#if ( portCRITICAL_NESTING_IN_TCB == 1 )
 		UBaseType_t		uxDummy9;
 	#endif
-	#if ( configUSE_TRACE_FACILITY == 1 )
+	#if( configUSE_TRACE_FACILITY == 1 ) || ( INCLUDE_vTaskGetInfo == 1 )
 		UBaseType_t		uxDummy10[ 2 ];
 	#endif
 	#if ( configUSE_MUTEXES == 1 )
@@ -1137,6 +1137,7 @@ typedef struct xSTATIC_TCB
 	#if( INCLUDE_xTaskAbortDelay == 1 )
 		uint8_t ucDummy21;
 	#endif
+
 	#if ( configUSE_POSIX_ERRNO == 1 )
 		int				iDummy22;
 	#endif
