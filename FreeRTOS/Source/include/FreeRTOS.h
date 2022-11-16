@@ -210,6 +210,10 @@ extern "C" {
 	#define configUSE_MUTEXES 0
 #endif
 
+#ifndef configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE
+	#define configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE 0
+#endif
+
 #ifndef configUSE_TIMERS
 	#define configUSE_TIMERS 0
 #endif
@@ -1117,6 +1121,9 @@ typedef struct xSTATIC_TCB
 	#endif
 	#if ( configUSE_MUTEXES == 1 )
 		UBaseType_t		uxDummy12[ 2 ];
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+		StaticList_t    xDummy13;
+#endif
 	#endif
 	#if ( configUSE_APPLICATION_TASK_TAG == 1 )
 		void			*pxDummy14;
@@ -1163,12 +1170,20 @@ typedef struct xSTATIC_TCB
  */
 typedef struct xSTATIC_QUEUE
 {
-	void *pvDummy1[ 3 ];
+	void *pvDummy1[ 2 ];
 
 	union
 	{
-		void *pvDummy2;
-		UBaseType_t uxDummy2;
+		struct {
+			void *pvDummy11[2];
+		};
+		struct {
+			void* pvDummy2;
+			UBaseType_t uxDummy2;
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+			StaticListItem_t xDummy22;
+#endif
+		};
 	} u;
 
 	StaticList_t xDummy3[ 2 ];

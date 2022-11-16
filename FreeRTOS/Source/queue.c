@@ -74,6 +74,9 @@ typedef struct SemaphoreData
 {
 	TaskHandle_t xMutexHolder;		 /*< The handle of the task that holds the mutex. */
 	UBaseType_t uxRecursiveCallCount;/*< Maintains a count of the number of times a recursive mutex has been recursively 'taken' when the structure is used as a mutex. */
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+	ListItem_t xMutexListItem;
+#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
 } SemaphoreData_t;
 
 /* Semaphores do not actually store or copy data, so have an item size of
@@ -483,6 +486,11 @@ static void prvInitialiseNewQueue( const UBaseType_t uxQueueLength, const UBaseT
 
 			/* In case this is a recursive mutex. */
 			pxNewQueue->u.xSemaphore.uxRecursiveCallCount = 0;
+
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+			vListInitialiseItem( &pxNewQueue->u.xSemaphore.xMutexListItem );
+			listSET_LIST_ITEM_OWNER( &pxNewQueue->u.xSemaphore.xMutexListItem, pxNewQueue );
+#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
 
 			traceCREATE_MUTEX( pxNewQueue );
 
@@ -1463,7 +1471,12 @@ Queue_t * const pxQueue = xQueue;
 					{
 						/* Record the information required to implement
 						priority inheritance should it become necessary. */
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 						pxQueue->u.xSemaphore.xMutexHolder = pvTaskIncrementMutexHeldCount();
+#else
+						pxQueue->u.xSemaphore.xMutexHolder = pvTaskIncrementMutexHeldCount( &pxQueue->u.xSemaphore.xMutexListItem );
+#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+
 					}
 					else
 					{
@@ -1551,7 +1564,11 @@ Queue_t * const pxQueue = xQueue;
 					{
 						taskENTER_CRITICAL();
 						{
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 							xInheritanceOccurred = xTaskPriorityInherit( pxQueue->u.xSemaphore.xMutexHolder );
+#else
+							xInheritanceOccurred = xTaskPriorityInherit( pxQueue->u.xSemaphore.xMutexHolder, &pxQueue->u.xSemaphore.xMutexListItem );
+#endif
 						}
 						taskEXIT_CRITICAL();
 					}
@@ -1610,7 +1627,11 @@ Queue_t * const pxQueue = xQueue;
 							again, but only as low as the next highest priority
 							task that is waiting for the same mutex. */
 							uxHighestWaitingPriority = prvGetDisinheritPriorityAfterTimeout( pxQueue );
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 							vTaskPriorityDisinheritAfterTimeout( pxQueue->u.xSemaphore.xMutexHolder, uxHighestWaitingPriority );
+#else
+							vTaskPriorityDisinheritAfterTimeout( pxQueue->u.xSemaphore.xMutexHolder, &pxQueue->u.xSemaphore.xMutexListItem, uxHighestWaitingPriority );
+#endif
 						}
 						taskEXIT_CRITICAL();
 					}
@@ -1981,6 +2002,11 @@ Queue_t * const pxQueue = xQueue;
 	}
 	#endif
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+	// configASSERT(listLIST_ITEM_CONTAINER(&pxQueue->u.xSemaphore.xMutexListItem) == NULL);
+#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+
+
 	#if( ( configSUPPORT_DYNAMIC_ALLOCATION == 1 ) && ( configSUPPORT_STATIC_ALLOCATION == 0 ) )
 	{
 		/* The queue can only have been allocated dynamically - free it
@@ -2083,7 +2109,11 @@ UBaseType_t uxMessagesWaiting;
 			if( pxQueue->uxQueueType == queueQUEUE_IS_MUTEX )
 			{
 				/* The mutex is no longer being held. */
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 				xReturn = xTaskPriorityDisinherit( pxQueue->u.xSemaphore.xMutexHolder );
+#else
+				xReturn = xTaskPriorityDisinherit( pxQueue->u.xSemaphore.xMutexHolder, &pxQueue->u.xSemaphore.xMutexListItem );
+#endif
 				pxQueue->u.xSemaphore.xMutexHolder = NULL;
 			}
 			else
