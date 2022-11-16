@@ -2346,6 +2346,7 @@ void vTaskMissedYield( void ) PRIVILEGED_FUNCTION;
  */
 BaseType_t xTaskGetSchedulerState( void ) PRIVILEGED_FUNCTION;
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 /*
  * Raises the priority of the mutex holder to that of the calling task should
  * the mutex holder have a priority less than the calling task.
@@ -2367,7 +2368,29 @@ BaseType_t xTaskPriorityDisinherit( TaskHandle_t const pxMutexHolder ) PRIVILEGE
  * more than one task waiting for the mutex).
  */
 void vTaskPriorityDisinheritAfterTimeout( TaskHandle_t const pxMutexHolder, UBaseType_t uxHighestPriorityWaitingTask ) PRIVILEGED_FUNCTION;
+#else
+/*
+ * Raises the priority of the mutex holder to that of the calling task should
+ * the mutex holder have a priority less than the calling task.
+ */
+BaseType_t xTaskPriorityInherit( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem ) PRIVILEGED_FUNCTION;
 
+/*
+ * Set the priority of a task back to its proper priority in the case that it
+ * inherited a higher priority while it was holding a semaphore.
+ */
+BaseType_t xTaskPriorityDisinherit( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem ) PRIVILEGED_FUNCTION;
+
+/*
+ * If a higher priority task attempting to obtain a mutex caused a lower
+ * priority task to inherit the higher priority task's priority - but the higher
+ * priority task then timed out without obtaining the mutex, then the lower
+ * priority task will disinherit the priority again - but only down as far as
+ * the highest priority task that is still waiting for the mutex (if there were
+ * more than one task waiting for the mutex).
+ */
+void vTaskPriorityDisinheritAfterTimeout( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem, UBaseType_t uxHighestPriorityWaitingTask ) PRIVILEGED_FUNCTION;
+#endif
 /*
  * Get the uxTCBNumber assigned to the task referenced by the xTask parameter.
  */
@@ -2409,14 +2432,17 @@ eSleepModeStatus eTaskConfirmSleepModeStatus( void ) PRIVILEGED_FUNCTION;
  * For internal use only.  Increment the mutex held count when a mutex is
  * taken and return the handle of the task that has taken the mutex.
  */
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 TaskHandle_t pvTaskIncrementMutexHeldCount( void ) PRIVILEGED_FUNCTION;
+#else
+TaskHandle_t pvTaskIncrementMutexHeldCount( ListItem_t * xListItem ) PRIVILEGED_FUNCTION;
+#endif
 
 /*
  * For internal use only.  Same as vTaskSetTimeOutState(), but without a critial
  * section.
  */
 void vTaskInternalSetTimeOutState( TimeOut_t * const pxTimeOut ) PRIVILEGED_FUNCTION;
-
 
 #ifdef __cplusplus
 }

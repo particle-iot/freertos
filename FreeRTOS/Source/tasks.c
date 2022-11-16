@@ -279,6 +279,9 @@ typedef struct tskTaskControlBlock 			/* The old naming convention is used to pr
 	#if ( configUSE_MUTEXES == 1 )
 		UBaseType_t		uxBasePriority;		/*< The priority last assigned to the task - used by the priority inheritance mechanism. */
 		UBaseType_t		uxMutexesHeld;
+	#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+		List_t xMutexesHeld;
+	#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
 	#endif
 
 	#if ( configUSE_APPLICATION_TASK_TAG == 1 )
@@ -932,6 +935,9 @@ UBaseType_t x;
 	{
 		pxNewTCB->uxBasePriority = uxPriority;
 		pxNewTCB->uxMutexesHeld = 0;
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+		vListInitialise( &pxNewTCB->xMutexesHeld );
+#endif // ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
 	}
 	#endif /* configUSE_MUTEXES */
 
@@ -4078,7 +4084,11 @@ TCB_t *pxTCB;
 
 #if ( configUSE_MUTEXES == 1 )
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 	BaseType_t xTaskPriorityInherit( TaskHandle_t const pxMutexHolder )
+#else
+	BaseType_t xTaskPriorityInherit( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem )
+#endif
 	{
 	TCB_t * const pxMutexHolderTCB = pxMutexHolder;
 	BaseType_t xReturn = pdFALSE;
@@ -4128,6 +4138,12 @@ TCB_t *pxTCB;
 					pxMutexHolderTCB->uxPriority = pxCurrentTCB->uxPriority;
 				}
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+				listSET_LIST_ITEM_VALUE(xListItem, ( ( TickType_t ) configMAX_PRIORITIES - ( TickType_t ) pxMutexHolderTCB->uxPriority ));
+				uxListRemove( xListItem );
+				vListInsert( &pxMutexHolderTCB->xMutexesHeld, xListItem );
+#endif
+
 				traceTASK_PRIORITY_INHERIT( pxMutexHolderTCB, pxCurrentTCB->uxPriority );
 
 				/* Inheritance occurred. */
@@ -4164,8 +4180,11 @@ TCB_t *pxTCB;
 /*-----------------------------------------------------------*/
 
 #if ( configUSE_MUTEXES == 1 )
-
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 	BaseType_t xTaskPriorityDisinherit( TaskHandle_t const pxMutexHolder )
+#else
+	BaseType_t xTaskPriorityDisinherit( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem )
+#endif
 	{
 	TCB_t * const pxTCB = pxMutexHolder;
 	BaseType_t xReturn = pdFALSE;
@@ -4180,12 +4199,16 @@ TCB_t *pxTCB;
 			configASSERT( pxTCB->uxMutexesHeld );
 			( pxTCB->uxMutexesHeld )--;
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+			uxListRemove( xListItem );
+#endif
+
 			/* Has the holder of the mutex inherited the priority of another
 			task? */
 			if( pxTCB->uxPriority != pxTCB->uxBasePriority )
 			{
-				/* Only disinherit if no other mutexes are held. */
-				if( pxTCB->uxMutexesHeld == ( UBaseType_t ) 0 )
+				/* Only disinherit if no other mutexes are held or configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE. */
+				if( pxTCB->uxMutexesHeld == ( UBaseType_t ) 0 || configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE )
 				{
 					/* A task can only have an inherited priority if it holds
 					the mutex.  If the mutex is held by a task then it cannot be
@@ -4201,10 +4224,18 @@ TCB_t *pxTCB;
 						mtCOVERAGE_TEST_MARKER();
 					}
 
+					UBaseType_t newPriority = pxTCB->uxBasePriority;
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+					if(  pxTCB->uxMutexesHeld != ( UBaseType_t ) 0 && !listLIST_IS_EMPTY( &pxTCB->xMutexesHeld ) )
+					{
+						newPriority = ( UBaseType_t ) configMAX_PRIORITIES - ( UBaseType_t )listGET_ITEM_VALUE_OF_HEAD_ENTRY( &pxTCB->xMutexesHeld );
+					}
+#endif
+
 					/* Disinherit the priority before adding the task into the
 					new	ready list. */
-					traceTASK_PRIORITY_DISINHERIT( pxTCB, pxTCB->uxBasePriority );
-					pxTCB->uxPriority = pxTCB->uxBasePriority;
+					traceTASK_PRIORITY_DISINHERIT( pxTCB, newPriority );
+					pxTCB->uxPriority = newPriority;
 
 					/* Reset the event list item value.  It cannot be in use for
 					any other purpose if this task is running, and it must be
@@ -4245,7 +4276,11 @@ TCB_t *pxTCB;
 
 #if ( configUSE_MUTEXES == 1 )
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 	void vTaskPriorityDisinheritAfterTimeout( TaskHandle_t const pxMutexHolder, UBaseType_t uxHighestPriorityWaitingTask )
+#else
+	void vTaskPriorityDisinheritAfterTimeout( TaskHandle_t const pxMutexHolder, ListItem_t * xListItem, UBaseType_t uxHighestPriorityWaitingTask )	
+#endif
 	{
 	TCB_t * const pxTCB = pxMutexHolder;
 	UBaseType_t uxPriorityUsedOnEntry, uxPriorityToUse;
@@ -4261,6 +4296,24 @@ TCB_t *pxTCB;
 			holds the mutex should be set.  This will be the greater of the
 			holding task's base priority and the priority of the highest
 			priority task that is waiting to obtain the mutex. */
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+			UBaseType_t mutexCurrentRequiredPriority = ( UBaseType_t ) configMAX_PRIORITIES - ( UBaseType_t ) listGET_LIST_ITEM_VALUE(xListItem);
+			UBaseType_t newMutexRequiredPriority = uxHighestPriorityWaitingTask;
+			if (newMutexRequiredPriority == tskIDLE_PRIORITY)
+			{
+				newMutexRequiredPriority = pxTCB->uxBasePriority;
+			}
+
+			if (newMutexRequiredPriority != mutexCurrentRequiredPriority)
+			{
+				// Re-order in the list with the new priority
+				uxListRemove( xListItem );
+				listSET_LIST_ITEM_VALUE(xListItem, ( ( UBaseType_t ) configMAX_PRIORITIES - ( UBaseType_t ) newMutexRequiredPriority ));
+				vListInsert( &pxTCB->xMutexesHeld, xListItem );
+			}
+
+			uxPriorityToUse = ( UBaseType_t ) configMAX_PRIORITIES - ( UBaseType_t )listGET_ITEM_VALUE_OF_HEAD_ENTRY( &pxTCB->xMutexesHeld );
+#else
 			if( pxTCB->uxBasePriority < uxHighestPriorityWaitingTask )
 			{
 				uxPriorityToUse = uxHighestPriorityWaitingTask;
@@ -4269,6 +4322,7 @@ TCB_t *pxTCB;
 			{
 				uxPriorityToUse = pxTCB->uxBasePriority;
 			}
+#endif
 
 			/* Does the priority need to change? */
 			if( pxTCB->uxPriority != uxPriorityToUse )
@@ -4277,7 +4331,7 @@ TCB_t *pxTCB;
 				simplification in the priority inheritance implementation.  If
 				the task that holds the mutex is also holding other mutexes then
 				the other mutexes may have caused the priority inheritance. */
-				if( pxTCB->uxMutexesHeld == uxOnlyOneMutexHeld )
+				if( pxTCB->uxMutexesHeld == uxOnlyOneMutexHeld || configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE )
 				{
 					/* If a task has timed out because it already holds the
 					mutex it was trying to obtain then it cannot of inherited
@@ -4287,7 +4341,7 @@ TCB_t *pxTCB;
 					/* Disinherit the priority, remembering the previous
 					priority to facilitate determining the subject task's
 					state. */
-					traceTASK_PRIORITY_DISINHERIT( pxTCB, pxTCB->uxBasePriority );
+					traceTASK_PRIORITY_DISINHERIT( pxTCB, uxPriorityToUse );
 					uxPriorityUsedOnEntry = pxTCB->uxPriority;
 					pxTCB->uxPriority = uxPriorityToUse;
 
@@ -4676,13 +4730,21 @@ TickType_t uxReturn;
 
 #if ( configUSE_MUTEXES == 1 )
 
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 0 )
 	TaskHandle_t pvTaskIncrementMutexHeldCount( void )
+#else
+	TaskHandle_t pvTaskIncrementMutexHeldCount( ListItem_t * xListItem )
+#endif
 	{
 		/* If xSemaphoreCreateMutex() is called before any tasks have been created
 		then pxCurrentTCB will be NULL. */
 		if( pxCurrentTCB != NULL )
 		{
 			( pxCurrentTCB->uxMutexesHeld )++;
+#if ( configMUTEX_MULTI_STEP_PRIORITY_DISINHERITANCE == 1 )
+			listSET_LIST_ITEM_VALUE(xListItem, ( ( TickType_t ) configMAX_PRIORITIES - ( TickType_t ) pxCurrentTCB->uxPriority ));
+			vListInsert( &pxCurrentTCB->xMutexesHeld, xListItem );
+#endif
 		}
 
 		return pxCurrentTCB;
