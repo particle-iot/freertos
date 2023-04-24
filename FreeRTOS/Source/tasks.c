@@ -1216,20 +1216,24 @@ static void prvAddNewTaskToReadyList( TCB_t *pxNewTCB )
 				hence xYieldPending is used to latch that a context switch is
 				required. */
 				portPRE_TASK_DELETE_HOOK( pxTCB, &xYieldPending );
+				traceTASK_DELETE( pxTCB );
 			}
 			else
 			{
 				--uxCurrentNumberOfTasks;
-				prvDeleteTCB( pxTCB );
 
 				/* Reset the next expected unblock time in case it referred to
 				the task that has just been deleted. */
 				prvResetNextTaskUnblockTime();
 			}
+		}
 
+		taskEXIT_CRITICAL();
+		if ( pxTCB != pxCurrentTCB )
+		{
+			prvDeleteTCB( pxTCB );
 			traceTASK_DELETE( pxTCB );
 		}
-		taskEXIT_CRITICAL();
 
 		/* Force a reschedule if it is the currently running task that has just
 		been deleted. */
