@@ -3744,6 +3744,16 @@ static void prvCheckTasksWaitingTermination( void )
 }
 /*-----------------------------------------------------------*/
 
+#if ( INCLUDE_vTaskDelete == 1 )
+
+	UBaseType_t uxTaskGetNumberOfTasksWaitingTermination( void )
+	{
+		return uxDeletedTasksWaitingCleanUp;
+	}
+
+#endif /* INCLUDE_vTaskDelete */
+/*-----------------------------------------------------------*/
+
 #if( configUSE_TRACE_FACILITY == 1 ) || ( INCLUDE_vTaskGetInfo == 1 )
 
 	void vTaskGetInfo( TaskHandle_t xTask, TaskStatus_t *pxTaskStatus, BaseType_t xGetFreeStackSpace, eTaskState eState )

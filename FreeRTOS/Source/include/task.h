@@ -1639,6 +1639,8 @@ typedef BaseType_t ( *TaskGetSystemStateParticleCallback_t)( TaskStatus_t * cons
 
 UBaseType_t uxTaskGetSystemStateParticle( TaskStatus_t * const pxTaskStatusArray, const UBaseType_t uxArraySize, uint32_t * const pulTotalRunTime, TaskGetSystemStateParticleCallback_t particleCallback, void* ptr );
 
+UBaseType_t uxTaskGetNumberOfTasksWaitingTermination( void ) PRIVILEGED_FUNCTION;
+
 void vTaskGetStackInfoParticle( TaskHandle_t pxTask, void** stack_ptr, void** start_stack_ptr, void** end_stack_ptr );
 
 /**
