@@ -614,6 +614,7 @@ void vEventGroupDelete( EventGroupHandle_t xEventGroup )
 {
 EventGroup_t *pxEventBits = xEventGroup;
 const List_t *pxTasksWaitingForBits = &( pxEventBits->xTasksWaitingForBits );
+BaseType_t xFreeRequired = pdFALSE;
 
 	vTaskSuspendAll();
 	{
@@ -631,7 +632,7 @@ const List_t *pxTasksWaitingForBits = &( pxEventBits->xTasksWaitingForBits );
 		{
 			/* The event group can only have been allocated dynamically - free
 			it again. */
-			vPortFree( pxEventBits );
+			xFreeRequired = pdTRUE;
 		}
 		#elif( ( configSUPPORT_DYNAMIC_ALLOCATION == 1 ) && ( configSUPPORT_STATIC_ALLOCATION == 1 ) )
 		{
@@ -639,7 +640,7 @@ const List_t *pxTasksWaitingForBits = &( pxEventBits->xTasksWaitingForBits );
 			dynamically, so check before attempting to free the memory. */
 			if( pxEventBits->ucStaticallyAllocated == ( uint8_t ) pdFALSE )
 			{
-				vPortFree( pxEventBits );
+				xFreeRequired = pdTRUE;
 			}
 			else
 			{
@@ -649,6 +650,19 @@ const List_t *pxTasksWaitingForBits = &( pxEventBits->xTasksWaitingForBits );
 		#endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 	}
 	( void ) xTaskResumeAll();
+
+	/* NOTE: Particle modification. The memory is released only after the scheduler
+	has been resumed. vPortFree() takes the same lock as newlib's malloc() and that
+	lock cannot be acquired while the scheduler is suspended: a task preempted while
+	holding it can never run to release it. */
+	#if( configSUPPORT_DYNAMIC_ALLOCATION == 1 )
+	{
+		if( xFreeRequired != pdFALSE )
+		{
+			vPortFree( pxEventBits );
+		}
+	}
+	#endif /* configSUPPORT_DYNAMIC_ALLOCATION */
 }
 /*-----------------------------------------------------------*/
 
